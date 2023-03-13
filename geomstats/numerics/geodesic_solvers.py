@@ -195,36 +195,36 @@ class LogShootingSolverUnflatten(LogSolver):
 
 
 class LogBVPSolver(LogSolver):
-    def __init__(self, n_nodes, integrator=None, initialization=None):
-        # TODO: add more control on the discretization
+    def __init__(self, n_segments=1000, integrator=None, initialization=None):
+        # TODO: add more control on the discretization?
         if integrator is None:
             integrator = ScipySolveBVP()
 
         if initialization is None:
             initialization = self._default_initialization
 
-        # TODO: rename (more segments than nodes)
-        self.n_nodes = n_nodes
+        # TODO: rename (more segments than nodes) #
+        self.n_segments = n_segments
         self.integrator = integrator
         self.initialization = initialization
 
-    def _default_initialization(self, space, point, base_point):
-        # TODO: receive discretization instead?
+    def _default_initialization(self, space, point, base_point, n_segments):
+        # TODO: receive discretization instead? #
         dim = space.dim
         point_0, point_1 = base_point, point
 
         # TODO: need to update torch linspace
-        # TODO: need to avoid assignment
+        # TODO: need to avoid assignment #
 
-        lin_init = gs.zeros([2 * dim, self.n_nodes])
-        lin_init[:dim, :] = gs.transpose(gs.linspace(point_0, point_1, self.n_nodes))
-        lin_init[dim:, :-1] = self.n_nodes * (lin_init[:dim, 1:] - lin_init[:dim, :-1])
-        lin_init[dim:, -1] = lin_init[dim:, -2]
+        mesh = gs.transpose(gs.linspace(point_0, point_1, n_segments))
+        predictions = n_segments * (mesh[1:] - mesh[:-1])
+        predictions = gs.vstack((predictions, gs.array(predictions[-1])))
+        lin_init = gs.hstack((mesh,predictions))
         return lin_init
 
     def boundary_condition(self, state_0, state_1, space, point_0, point_1):
-        pos_0 = state_0[: space.dim]
-        pos_1 = state_1[: space.dim]
+        pos_0 = state_0[:space.dim]
+        pos_1 = state_1[:space.dim]
         return gs.hstack((pos_0 - point_0, pos_1 - point_1))
 
     def bvp(self, _, raveled_state, space):
@@ -251,8 +251,8 @@ class LogBVPSolver(LogSolver):
             state_0, state_1, space, base_point, point
         )
 
-        x = gs.linspace(0.0, 1.0, self.n_nodes)
-        y = self.initialization(space, point, base_point)
+        x = gs.linspace(0.0, 1.0, self.n_segments)
+        y = self.initialization(space, point, base_point, self.n_segments)
 
         result = self.integrator.integrate(bvp, bc, x, y)
 
