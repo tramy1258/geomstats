@@ -245,18 +245,26 @@ class LogBVPSolver(LogSolver):
         # TODO: vectorize
         # TODO: assume known jacobian
 
-        # if point.ndim > 2 or base_point.ndim > 2:
-        bvp = lambda t, state: self.bvp(t, state, space)
-        bc = lambda state_0, state_1: self.boundary_condition(
-            state_0, state_1, space, base_point, point
-        )
+        all_results = []
 
-        x = gs.linspace(0.0, 1.0, self.n_segments)
-        y = self.initialization(space, point, base_point, self.n_segments)
+        point, base_point = gs.broadcast_arrays(point, base_point)
+        if point.ndim == 1:
+            point = gs.expand_dims(point, axis=0)
+            base_point = gs.expand_dims(point, axis=0)
 
-        result = self.integrator.integrate(bvp, bc, x, y)
+        for i in range(point.shape[0]):
+            bvp = lambda t, state: self.bvp(t, state, space)
+            bc = lambda state_0, state_1: self.boundary_condition(
+                state_0, state_1, space, base_point[i], point[i]
+            )
 
-        return self._simplify_result(result, space)
+            x = gs.linspace(0.0, 1.0, self.n_segments)
+            y = self.initialization(space, point[i], base_point[i], self.n_segments)
+        
+            result = self.integrator.integrate(bvp, bc, x, y)
+            all_results.append(result)
+
+        return gs.squeeze(gs.vstack([self._simplify_result(result, space) for result in all_results]), axis=0)
 
     def geodesic_bvp(self, space, point, base_point):
         pass
