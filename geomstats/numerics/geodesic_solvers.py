@@ -209,17 +209,16 @@ class LogBVPSolver(LogSolver):
         self.initialization = initialization
 
     def _default_initialization(self, space, point, base_point, n_segments):
-        # TODO: receive discretization instead? #
+        # TODO: receive discretization instead?
         dim = space.dim
         point_0, point_1 = base_point, point
 
-        # TODO: need to update torch linspace
+        # TODO: need to update torch linspace #
         # TODO: need to avoid assignment #
-
         mesh = gs.transpose(gs.linspace(point_0, point_1, n_segments))
-        predictions = n_segments * (mesh[1:] - mesh[:-1])
-        predictions = gs.vstack((predictions, gs.array(predictions[-1])))
-        lin_init = gs.hstack((mesh,predictions))
+        predictions = n_segments * (mesh[:,1:] - mesh[:,:-1])
+        predictions = gs.hstack((predictions, gs.array(predictions[:,-2:-1])))
+        lin_init = gs.vstack((mesh,predictions))
         return lin_init
 
     def boundary_condition(self, state_0, state_1, space, point_0, point_1):
@@ -246,6 +245,7 @@ class LogBVPSolver(LogSolver):
         # TODO: vectorize
         # TODO: assume known jacobian
 
+        # if point.ndim > 2 or base_point.ndim > 2:
         bvp = lambda t, state: self.bvp(t, state, space)
         bc = lambda state_0, state_1: self.boundary_condition(
             state_0, state_1, space, base_point, point
