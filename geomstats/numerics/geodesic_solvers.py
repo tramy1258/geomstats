@@ -242,7 +242,7 @@ class LogBVPSolver(LogSolver):
         return eq
 
     def log(self, space, point, base_point):
-        # TODO: vectorize
+        # TODO: vectorize #
         # TODO: assume known jacobian
 
         all_results = []
