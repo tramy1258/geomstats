@@ -326,7 +326,7 @@ def einsum(equation, *inputs):
 def transpose(x, axes=None):
     if axes:
         return x.permute(axes)
-    print(type(x), x.shape)
+    # print(type(x), x.shape)
     if x.dim() == 1:
         return x
     if x.dim() > 2 and axes is None:
@@ -354,8 +354,10 @@ def linspace(start, stop, num=50, dtype=None):
         return _torch.linspace(start=start, end=stop, steps=num, dtype=dtype)
     except TypeError:
         if not _torch.is_tensor(start) or start.ndim == 0:
+            print('a')
             start = _torch.tensor([start])
         if not _torch.is_tensor(stop) or stop.ndim == 0:
+            print('b')
             stop = _torch.tensor([stop])
 
         if start.shape == stop.shape:
