@@ -354,10 +354,8 @@ def linspace(start, stop, num=50, dtype=None):
         return _torch.linspace(start=start, end=stop, steps=num, dtype=dtype)
     except TypeError:
         if not _torch.is_tensor(start) or start.ndim == 0:
-            print('a')
             start = _torch.tensor([start])
         if not _torch.is_tensor(stop) or stop.ndim == 0:
-            print('b')
             stop = _torch.tensor([stop])
 
         if start.shape == stop.shape:

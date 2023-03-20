@@ -265,7 +265,6 @@ class LogBVPSolver(LogSolver):
             y = self.initialization(space, point[i], base_point[i], self.n_segments)
             
             result = self.integrator.integrate(bvp, bc, x, y)
-            print(result.y.shape, x.shape)
             all_results.append(result)
 
         return gs.squeeze(gs.vstack([self._simplify_result(result, space) for result in all_results]), axis=0)
@@ -273,7 +272,7 @@ class LogBVPSolver(LogSolver):
     def geodesic_bvp(self, space, point, base_point):
         point, base_point = gs.broadcast_arrays(point, base_point)
         def path(t):
-            # TODO: retrieve result.y of x closest to t
+            # my TODO: retrieve result.y of x closest to t?
             pass
             
         return path
@@ -282,3 +281,7 @@ class LogBVPSolver(LogSolver):
         _, tangent_vec = gs.reshape(gs.transpose(result.y)[0], (space.dim, space.dim))
 
         return tangent_vec
+    
+# class LogPolynomialSolver(LogSolver):
+# use minimize in optimize
+
