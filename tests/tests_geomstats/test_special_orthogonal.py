@@ -155,20 +155,28 @@ class TestSpecialOrthogonal3Vectors(TestCase, metaclass=Parametrizer):
     testing_data = SpecialOrthogonal3TestData()
     Space = testing_data.Space
 
-    def test_tait_bryan_angles_matrix(self, coord, order, vec, mat):
+    def test_tait_bryan_angles_matrix(self, extrinsic, zyx, vec, mat):
         group = self.Space(3, point_type="vector")
 
-        mat_from_vec = group.matrix_from_tait_bryan_angles(vec, coord, order)
+        mat_from_vec = group.matrix_from_tait_bryan_angles(
+            vec, extrinsic=extrinsic, zyx=zyx
+        )
         self.assertAllClose(mat_from_vec, mat)
-        vec_from_mat = group.tait_bryan_angles_from_matrix(mat, coord, order)
+        vec_from_mat = group.tait_bryan_angles_from_matrix(
+            mat, extrinsic=extrinsic, zyx=zyx
+        )
         self.assertAllClose(vec_from_mat, vec)
 
-    def test_tait_bryan_angles_quaternion(self, coord, order, vec, quat):
+    def test_tait_bryan_angles_quaternion(self, extrinsic, zyx, vec, quat):
         group = self.Space(3, point_type="vector")
 
-        quat_from_vec = group.quaternion_from_tait_bryan_angles(vec, coord, order)
+        quat_from_vec = group.quaternion_from_tait_bryan_angles(
+            vec, extrinsic=extrinsic, zyx=zyx
+        )
         self.assertAllClose(quat_from_vec, quat)
-        vec_from_quat = group.tait_bryan_angles_from_quaternion(quat, coord, order)
+        vec_from_quat = group.tait_bryan_angles_from_quaternion(
+            quat, extrinsic=extrinsic, zyx=zyx
+        )
         self.assertAllClose(vec_from_quat, vec)
 
     def test_quaternion_from_rotation_vector_tait_bryan_angles(
@@ -227,13 +235,11 @@ class TestSpecialOrthogonal3Vectors(TestCase, metaclass=Parametrizer):
         result = group.lie_bracket(tangent_vec_a, tangent_vec_b, base_point)
         self.assertAllClose(result, expected)
 
-    @tests.conftest.np_autograd_and_torch_only
     def test_group_exp_after_log_with_angles_close_to_pi(self, point, base_point):
         """
         This tests that the composition of
         log and exp gives identity.
         """
-        # TODO(nguigs): fix this test for tf
         group = self.Space(3, point_type="vector")
         result = group.exp(group.log(point, base_point), base_point)
         expected = group.regularize(point)
@@ -316,7 +322,7 @@ class TestSpecialOrthogonal3Vectors(TestCase, metaclass=Parametrizer):
             gs.allclose(result, expected) or gs.allclose(result, inv_expected)
         )
 
-    @tests.conftest.np_autograd_and_tf_only
+    @tests.conftest.np_and_autograd_only
     def test_regularize_extreme_cases(self, point, expected):
         group = SpecialOrthogonal(3, "vector")
         result = group.regularize(point)
@@ -368,7 +374,7 @@ class TestBiInvariantMetric(InvariantMetricTestCase, metaclass=Parametrizer):
         result = metric.log(point, base_point)
         self.assertAllClose(result, expected)
 
-    @tests.conftest.np_autograd_and_tf_only
+    @tests.conftest.np_and_autograd_only
     def test_distance_broadcast(self, n):
         group = SpecialOrthogonal(n=n)
         point = group.random_point(5)
