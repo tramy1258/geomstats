@@ -270,10 +270,28 @@ class LogBVPSolver(LogSolver):
         return gs.squeeze(gs.vstack([self._simplify_result(result, space) for result in all_results]), axis=0)
 
     def geodesic_bvp(self, space, point, base_point):
+        all_results = []
+
         point, base_point = gs.broadcast_arrays(point, base_point)
+        if point.ndim == 1:
+            point = gs.expand_dims(point, axis=0)
+            base_point = gs.expand_dims(base_point, axis=0)
+
+        for i in range(point.shape[0]):
+            bvp = lambda t, state: self.bvp(t, state, space)
+            bc = lambda state_0, state_1: self.boundary_condition(
+                state_0, state_1, space, base_point[i], point[i]
+            )
+
+            x = gs.linspace(0.0, 1.0, self.n_segments)
+            y = self.initialization(space, point[i], base_point[i], self.n_segments)
+            
+            result = self.integrator.integrate(bvp, bc, x, y)
+            all_results.append(result)
+
         def path(t):
-            # my TODO: retrieve result.y of x closest to t?
-            pass
+            y_t = gs.array([result.sol(t)[:1] for result in all_results])
+            return gs.expand_dims(gs.squeeze(y_t, axis=-2), axis=-1)
             
         return path
 

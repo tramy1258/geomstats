@@ -326,7 +326,6 @@ def einsum(equation, *inputs):
 def transpose(x, axes=None):
     if axes:
         return x.permute(axes)
-    # print(type(x), x.shape)
     if x.dim() == 1:
         return x
     if x.dim() > 2 and axes is None:

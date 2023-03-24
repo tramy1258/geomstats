@@ -13,12 +13,6 @@ class ScipySolveBVP:
         self.result_ = None
 
     def integrate(self, fun, bc, x, y):
-        # def bvp(t, state):
-        #     return fun(t, gs.array(state))
-
-        # def bc_(state_0, state_1):
-        #     return fun(gs.array(state_0), gs.array(state_1))
-
         result = scipy.integrate.solve_bvp(
             fun, bc, x, y, tol=self.tol, max_nodes=self.max_nodes
         )
