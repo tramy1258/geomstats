@@ -235,7 +235,7 @@ class LogBVPSolver(LogSolver):
         # assumes unvectorized
 
         state = gs.moveaxis(
-            gs.reshape(gs.array(raveled_state), (space.dim, space.dim, -1)), -2, -1
+            gs.reshape(gs.array(raveled_state), (2, space.dim, -1)), -2, -1
         )
 
         eq = space.metric.geodesic_equation(state, _)
@@ -278,7 +278,7 @@ class LogBVPSolver(LogSolver):
         return path
 
     def _simplify_result(self, result, space):
-        _, tangent_vec = gs.reshape(gs.transpose(result.y)[0], (space.dim, space.dim))
+        _, tangent_vec = gs.reshape(gs.transpose(result.y)[0], (2, space.dim))
 
         return tangent_vec
     
