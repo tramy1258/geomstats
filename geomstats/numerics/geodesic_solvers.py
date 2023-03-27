@@ -223,8 +223,6 @@ class LogBVPSolver(LogSolver):
         return lin_init
 
     def boundary_condition(self, state_0, state_1, space, point_0, point_1):
-        state_0 = gs.array(state_0)
-        state_1 = gs.array(state_1)
         pos_0 = state_0[:space.dim]
         pos_1 = state_1[:space.dim]
         return gs.hstack((pos_0 - point_0, pos_1 - point_1))
@@ -235,7 +233,7 @@ class LogBVPSolver(LogSolver):
         # assumes unvectorized
 
         state = gs.moveaxis(
-            gs.reshape(gs.array(raveled_state), (2, space.dim, -1)), -2, -1
+            gs.reshape(raveled_state, (2, space.dim, -1)), -2, -1
         )
 
         eq = space.metric.geodesic_equation(state, _)
