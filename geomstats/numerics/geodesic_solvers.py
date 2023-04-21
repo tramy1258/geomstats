@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 import logging
 import numpy as np
+from scipy.optimize import minimize
 
 import geomstats.backend as gs
 from geomstats.numerics.bvp_solvers import ScipySolveBVP
@@ -273,6 +274,7 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
     def boundary_condition(self, state_0, state_1, space, point_0, point_1):
         pos_0 = state_0[:space.dim]
         pos_1 = state_1[:space.dim]
+        print(type(pos_0), type(point_0))
         return gs.hstack((pos_0 - point_0, pos_1 - point_1))
 
     def bvp(self, _, raveled_state, space):
@@ -316,7 +318,7 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
 
         def path(t):
             if not gs.is_array(t):
-                t = gs.array([t])
+                t = gs.array(t)
 
             if not is_batch:
                 return self._simplify_result_t(result.sol(t), space)
@@ -331,263 +333,143 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
         _, tangent_vec = gs.reshape(gs.transpose(result.y)[0], (2, space.dim))
         return tangent_vec
     
-class LogPolynomialSolver(LogSolver):
-# use minimize in optimize
-    def __init__(self, n_segments=100, optimizer=None, integrator=None, initialization=None, method="L-BFGS-B", jac=None,
-                 bounds=None, tol=None, callback=None, options=None, save_results=False):
+    def _simplify_result_t(self, result, space):
+        return gs.transpose(result[:2, :])
+    
+
+class LogPolynomialSolver(_LogBatchMixins, LogSolver):
+
+    def __init__(self, n_nodes=201, degree=5, optimizer=None, initialization=None):
         if optimizer is None:
-            optimizer = ScipyMinimize(method=method, jac=jac, bounds=bounds, tol=tol, callback=callback, options=options, save_result=save_results)
-        
-        if integrator is None:
-            integrator = ScipySolveBVP()
+            optimizer = ScipyMinimize()
 
         if initialization is None:
             initialization = self._default_initialization
         
-        self.n_segments = n_segments
+        self.n_nodes = n_nodes
+        self.degree  = degree
         self.initialization = initialization
         self.optimizer = optimizer
-        self.integrator = integrator
     
-    def _approx_geodesic_bvp(
+    def _default_initialization(self, space, point, base_point, param, t=None):
+        last_coef = point - base_point - gs.sum(param, axis=0)
+        coef = gs.vstack((base_point, param, last_coef))
+
+        t = gs.linspace(0.0, 1.0, self.n_nodes) if t is None else t
+
+        t_x = gs.stack([t**i for i in range(self.degree + 1)])
+        x = gs.einsum("ij,ik->kj", coef, t_x)
+
+        t_y = gs.stack([i * t ** (i - 1) for i in range(1, self.degree + 1)])
+        y = gs.einsum("ij,ik->kj", coef[1:], t_y)
+
+        return x, y
+    
+    def _cost_fun(self, param, space, point, base_point):
+        """Compute the energy of the polynomial curve defined by param."""
+
+        x, y = self.initialization(space, point, base_point, param)
+        if x.min() < 0:
+            return np.inf, np.inf, x, np.nan
+
+        velocity_sqnorm = space.metric.squared_norm(vector=y, base_point=x)
+        energy = gs.sum(velocity_sqnorm) / self.n_nodes
+        return energy, x, y
+    
+    def _cost_jacobian(self, param, space, point, base_point):
+        """Compute the jacobian of the cost function at polynomial curve."""
+
+        t = gs.linspace(0.0, 1.0, self.n_nodes)
+        x, y = self.initialization(space, point, base_point, param, t=t)
+        
+        fac1 = gs.stack(
+            [
+                k * t ** (k - 1) - self.degree * t ** (self.degree - 1)
+                for k in range(1, self.degree)
+            ]
+        )
+        fac2 = gs.stack([t**k - t**self.degree for k in range(1, self.degree)])
+        fac3 = (y * gs.polygamma(1, x)).T - gs.sum(
+            y, 1
+        ) * gs.polygamma(1, gs.sum(x, 1))
+        fac4 = (y**2 * gs.polygamma(2, x)).T - gs.sum(
+            y, 1
+        ) ** 2 * gs.polygamma(2, gs.sum(x, 1))
+
+        cost_jac = (
+            2 * gs.einsum("ij,kj->ik", fac1, fac3)
+            + gs.einsum("ij,kj->ik", fac2, fac4)
+        ) / self.n_nodes
+        return gs.reshape(gs.transpose(cost_jac), (space.dim * (self.degree - 1),))
+
+    def _f2minimize(self, x, space, point, base_point):
+        """Compute function to minimize."""
+        param = gs.transpose(gs.reshape(x,(space.dim, self.degree - 1)))
+        return self._cost_fun(param, space, point, base_point)[0]
+
+    def _jacobian(self, x, space, point, base_point):
+        """Compute jacobian of the function to minimize."""
+        param = gs.transpose(gs.reshape(gs.from_numpy(x),(space.dim, self.degree - 1)))
+        return self._cost_jacobian(param, space, point, base_point)
+    
+    def _solve(
         self,
         space,
-        initial_point,
-        end_point,
-        degree=5,
-        method="BFGS",
-        n_times=200,
+        point,
+        base_point,
         jac_on=True,
     ):
-        def cost_fun(param):
-            """Compute the energy of the polynomial curve defined by param."""
-            last_coef = end_point - initial_point - gs.sum(param, axis=0)
-            coef = gs.vstack((initial_point, param, last_coef))
-
-            t = gs.linspace(0.0, 1.0, n_times)
-            t_curve = [t**i for i in range(degree + 1)]
-            t_curve = gs.stack(t_curve)
-            curve = gs.einsum("ij,ik->kj", coef, t_curve)
-
-            t_velocity = [i * t ** (i - 1) for i in range(1, degree + 1)]
-            t_velocity = gs.stack(t_velocity)
-            velocity = gs.einsum("ij,ik->kj", coef[1:], t_velocity)
-
-            if curve.min() < 0:
-                return np.inf, np.inf, curve, np.nan
-
-            velocity_sqnorm = space.metric.squared_norm(vector=velocity, base_point=curve)
-            # print(velocity_sqnorm)
-            length = gs.sum(velocity_sqnorm ** (1 / 2)) / n_times
-            energy = gs.sum(velocity_sqnorm) / n_times
-            return energy, length, curve, velocity     
         
-        def cost_jacobian(param):
-            """Compute the jacobian of the cost function at polynomial curve."""
-            last_coef = end_point - initial_point - gs.sum(param, 0)
-            coef = gs.vstack((initial_point, param, last_coef))
+        x0 = gs.ones(space.dim * (self.degree - 1))
+        jac = self._jacobian if jac_on else None
+        sol = self.optimizer.optimize(self._f2minimize, x0, jac=jac, args=(space, point, base_point))
+        # sol = self.optimizer.optimize(self._f2minimize, x0, jac="autodiff", args=(space, point, base_point))
+        opt_param = gs.transpose(gs.reshape(sol.x,(space.dim, self.degree - 1)))
+        _, x, y = self._cost_fun(opt_param, space, point, base_point)
 
-            t = gs.linspace(0.0, 1.0, n_times)
-            t_position = [t**i for i in range(degree + 1)]
-            t_position = gs.stack(t_position)
-            position = gs.einsum("ij,ik->kj", coef, t_position)
-
-            t_velocity = [i * t ** (i - 1) for i in range(1, degree + 1)]
-            t_velocity = gs.stack(t_velocity)
-            velocity = gs.einsum("ij,ik->kj", coef[1:], t_velocity)
-
-            fac1 = gs.stack(
-                [
-                    k * t ** (k - 1) - degree * t ** (degree - 1)
-                    for k in range(1, degree)
-                ]
-            )
-            fac2 = gs.stack([t**k - t**degree for k in range(1, degree)])
-            fac3 = (velocity * gs.polygamma(1, position)).T - gs.sum(
-                velocity, 1
-            ) * gs.polygamma(1, gs.sum(position, 1))
-            fac4 = (velocity**2 * gs.polygamma(2, position)).T - gs.sum(
-                velocity, 1
-            ) ** 2 * gs.polygamma(2, gs.sum(position, 1))
-
-            cost_jac = (
-                2 * gs.einsum("ij,kj->ik", fac1, fac3)
-                + gs.einsum("ij,kj->ik", fac2, fac4)
-            ) / n_times
-            return cost_jac.T.reshape(dim * (degree - 1))
-
-        def f2minimize(x):
-            """Compute function to minimize."""
-            param = gs.transpose(x.reshape((dim, degree - 1)))
-            res = cost_fun(param)
-            return res[0]
-
-        def jacobian(x):
-            """Compute jacobian of the function to minimize."""
-            param = gs.transpose(x.reshape((dim, degree - 1)))
-            return cost_jacobian(param)
-        
-        dim = initial_point.shape[0]
-        x0 = gs.ones(dim * (degree - 1))
-        jac = jacobian if jac_on else None
-        sol = self.optimizer.optimize(f2minimize, x0, jac=jac)
-        opt_param = sol.x.reshape((dim, degree - 1)).T
-        _, dist, curve, velocity = cost_fun(opt_param)
-
-        return dist, curve, velocity
+        return x, y
     
-    def _default_initialization(self, space, point, base_point, n_segments):
-        #_approx_geodesic_bvp
-        _, curve, velocity = self._approx_geodesic_bvp(
-            space, base_point, point, n_times=n_segments
-        )
-        return gs.vstack((curve.T, velocity.T))
+    def _log_single(self, space, point, base_point):
+        _, y = self._solve(space, point, base_point)
+        return y[0]
+    
+    def _simplify_result_t(self, x, t):
+        """Get point at t using interpolation"""
+        n_segments = x.shape[0]-1
+        points_at_t = []
+        for t_ in t:
+            i1 = int(t_*(n_segments))
+            t1 = i1/n_segments
+            if i1 == n_segments:
+                points_at_t.append(x[i1])
+                continue
+            i2 = i1+1
+            t2 = i2/n_segments
+            points_at_t.append(x[i1] + (t_-t1)*(x[i2]-x[i1])/(t2-t1))
+        return gs.stack(points_at_t)
 
-    def bvp(self, _, raveled_state, space):
-        state = gs.moveaxis(
-            gs.reshape(raveled_state, (2, space.dim, -1)), -2, -1
-        )
+    def geodesic_bvp(self, space, point, base_point):
+        # TODO: add to docstrings: 0 <= t <= 1
 
-        eq = space.metric.geodesic_equation(state, _)
+        if point.ndim != base_point.ndim:
+            point, base_point = gs.broadcast_arrays(point, base_point)
 
-        eq = gs.reshape(gs.moveaxis(eq, -2, -1), (2 * space.dim, -1))
-        
-        return eq
-
-    def boundary_condition(self, state_0, state_1, space, point_0, point_1):
-        pos_0 = state_0[:space.dim]
-        pos_1 = state_1[:space.dim]
-        return gs.hstack((pos_0 - point_0, pos_1 - point_1))
-
-    # def jac(_, raveled_state):
-    #     n_dim = raveled_state.ndim
-    #     n_times = raveled_state.shape[1] if n_dim > 1 else 1
-    #     position, velocity = raveled_state[: space.dim], raveled_state[space.dim :]
-
-    #     dgamma = space.metric.jacobian_christoffels(gs.transpose(position))
-
-    #     df_dposition = -gs.einsum(
-    #         "j...,...ijkl,k...->il...", velocity, dgamma, velocity
-    #     )
-
-    #     gamma = space.metric.christoffels(gs.transpose(position))
-    #     df_dvelocity = -2 * gs.einsum("...ijk,k...->ij...", gamma, velocity)
-
-    #     jac_nw = (
-    #         gs.zeros((space.dim, space.dim, raveled_state.shape[1]))
-    #         if n_dim > 1
-    #         else gs.zeros((space.dim, space.dim))
-    #     )
-    #     jac_ne = gs.squeeze(
-    #         gs.transpose(gs.tile(gs.eye(space.dim), (n_times, 1, 1)))
-    #     )
-    #     jac_sw = df_dposition
-    #     jac_se = df_dvelocity
-    #     jac = gs.concatenate(
-    #         (
-    #             gs.concatenate((jac_nw, jac_ne), axis=1),
-    #             gs.concatenate((jac_sw, jac_se), axis=1),
-    #         ),
-    #         axis=0,
-    #     )
-
-    #     return jac
-
-    def geodesic_bvp(self, space, point, base_point, jacobian=False):
-        all_results = []
-        point, base_point = gs.broadcast_arrays(point, base_point)
-        if point.ndim == 1:
-            point = gs.expand_dims(point, axis=0)
-            base_point = gs.expand_dims(base_point, axis=0)
-
-        fun_jac = self.jac if jacobian else None
-
-        for i in range(point.shape[0]):
-            bvp = lambda t, state: self.bvp(t, state, space)
-            bc = lambda state_0, state_1: self.boundary_condition(
-                state_0, state_1, space, base_point[i], point[i]
-            )
-            x = gs.linspace(0.0, 1.0, self.n_segments) 
-            y = self.initialization(space, point[i], base_point[i], self.n_segments)
-            result = self.integrator.integrate(bvp, bc, x, y, fun_jac=fun_jac)
-            if result.status == 1:
-                logging.warning(
-                    "The maximum number of mesh nodes for solving the  "
-                    "geodesic boundary value problem is exceeded. "
-                    "Result may be inaccurate."
-                )
-            all_results.append(result)
+        is_batch = point.ndim > space.point_ndim
+        if not is_batch:
+            result = self._solve(space, point, base_point)[0]
+        else:
+            results = [
+                self._solve(space, point_, base_point_)[0]
+                for point_, base_point_ in zip(point, base_point)
+            ]
 
         def path(t):
-            y_t = gs.array([result.sol(t)[:space.dim] for result in all_results])
-            return gs.moveaxis(y_t,-1,-2)
-            # return gs.expand_dims(gs.squeeze(y_t, axis=-2), axis=-1)
+            if not is_batch:
+                return self._simplify_result_t(result, t)
+
+            return gs.array(
+                [self._simplify_result_t(result, t) for result in results]
+            )
 
         return path
-
-    def log(self, space, point, base_point, jacobian=False):
-        all_results = []
-        point, base_point = gs.broadcast_arrays(point, base_point)
-        if point.ndim == 1:
-            point = gs.expand_dims(point, axis=0)
-            base_point = gs.expand_dims(base_point, axis=0)
-
-        def jac(_, raveled_state):
-            n_dim = raveled_state.ndim
-            n_times = raveled_state.shape[1] if n_dim > 1 else 1
-            position, velocity = raveled_state[: space.dim], raveled_state[space.dim :]
-
-            dgamma = space.metric.jacobian_christoffels(gs.transpose(position))
-
-            df_dposition = -gs.einsum(
-                "j...,...ijkl,k...->il...", velocity, dgamma, velocity
-            )
-
-            gamma = space.metric.christoffels(gs.transpose(position))
-            df_dvelocity = -2 * gs.einsum("...ijk,k...->ij...", gamma, velocity)
-
-            jac_nw = (
-                gs.zeros((space.dim, space.dim, raveled_state.shape[1]))
-                if n_dim > 1
-                else gs.zeros((space.dim, space.dim))
-            )
-            jac_ne = gs.squeeze(
-                gs.transpose(gs.tile(gs.eye(space.dim), (n_times, 1, 1)))
-            )
-            jac_sw = df_dposition
-            jac_se = df_dvelocity
-            jac = gs.concatenate(
-                (
-                    gs.concatenate((jac_nw, jac_ne), axis=1),
-                    gs.concatenate((jac_sw, jac_se), axis=1),
-                ),
-                axis=0,
-            )
-
-            return jac
-
-        fun_jac = jac if jacobian else None
-
-        for i in range(point.shape[0]):
-            bvp = lambda t, state: self.bvp(t, state, space)
-            bc = lambda state_0, state_1: self.boundary_condition(
-                state_0, state_1, space, base_point[i], point[i]
-            )
-            x = gs.linspace(0.0, 1.0, self.n_segments) 
-            y = self.initialization(space, point[i], base_point[i], self.n_segments)
-            print(y)
-            #result = self.integrator.integrate(bvp, bc, x, y, fun_jac=fun_jac)
-            # if result.status == 1:
-            #     logging.warning(
-            #         "The maximum number of mesh nodes for solving the  "
-            #         "geodesic boundary value problem is exceeded. "
-            #         "Result may be inaccurate."
-            #     )
-            # all_results.append(result)
-            
-        return gs.squeeze(gs.vstack([self._simplify_result(result, space) for result in all_results]), axis=0)
-
-    def _simplify_result(self, result, space):
-        _, tangent_vec = gs.reshape(gs.transpose(result.y)[0], (2, space.dim))
-
-        return tangent_vec
+    
