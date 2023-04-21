@@ -274,7 +274,6 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
     def boundary_condition(self, state_0, state_1, space, point_0, point_1):
         pos_0 = state_0[:space.dim]
         pos_1 = state_1[:space.dim]
-        print(type(pos_0), type(point_0))
         return gs.hstack((pos_0 - point_0, pos_1 - point_1))
 
     def bvp(self, _, raveled_state, space):
@@ -334,7 +333,7 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
         return tangent_vec
     
     def _simplify_result_t(self, result, space):
-        return gs.transpose(result[:2, :])
+        return gs.transpose(result[:space.dim, :])
     
 
 class LogPolynomialSolver(_LogBatchMixins, LogSolver):
@@ -423,7 +422,6 @@ class LogPolynomialSolver(_LogBatchMixins, LogSolver):
         x0 = gs.ones(space.dim * (self.degree - 1))
         jac = self._jacobian if jac_on else None
         sol = self.optimizer.optimize(self._f2minimize, x0, jac=jac, args=(space, point, base_point))
-        # sol = self.optimizer.optimize(self._f2minimize, x0, jac="autodiff", args=(space, point, base_point))
         opt_param = gs.transpose(gs.reshape(sol.x,(space.dim, self.degree - 1)))
         _, x, y = self._cost_fun(opt_param, space, point, base_point)
 
