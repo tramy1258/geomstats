@@ -20,7 +20,7 @@ class ScipySolveBVP:
             return fun(gs.array(state_0), gs.array(state_1))
 
         result = scipy.integrate.solve_bvp(
-            bvp, bc, x, y, tol=self.tol, max_nodes=self.max_nodes
+            bvp, bc_, x, y, tol=self.tol, max_nodes=self.max_nodes
         )
 
         result = result_to_backend_type(result)
