@@ -41,7 +41,7 @@ class ScipyMinimize:
         if fun_jac is not None:
             return fun, fun_jac
 
-        jac = self.jac if jac is None else jac
+        jac = self.jac if fun_jac is None else fun_jac
         if jac == "autodiff":
             jac = True
 
@@ -77,7 +77,7 @@ class ScipyMinimize:
             If not None, jac is ignored.
         fun_hess : callable
             If not None, hess is ignored.
-        hessp : callable
+        hess : callable
         """
         fun_, jac = self._handle_jac(fun, fun_jac)
         hess = self._handle_hess(fun_hess)

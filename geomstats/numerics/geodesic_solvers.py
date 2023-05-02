@@ -350,18 +350,18 @@ class _Polynomial:
     def degree(self):
         return self.coeffs.shape[-1] - 1
 
-    def __call__(self, x):
+    def __call__(self, t):
         x_t = gs.stack(
-            [gs.power(x, power) for power in range(self.degree + 1)], axis=-1
+            [gs.power(t, power) for power in range(self.degree + 1)], axis=-1
         )
-        return gs.einsum("...j,nj->n...", self.coeffs, x_t)
+        return gs.einsum("...kj,nj->...nk", self.coeffs, x_t)
 
-    def first_derivative(self, x):
+    def first_derivative(self, t):
         dx_t = gs.stack(
-            [power * gs.power(x, power - 1) for power in range(1, self.degree + 1)],
+            [power * gs.power(t, power - 1) for power in range(1, self.degree + 1)],
             axis=-1,
         )
-        return gs.einsum("...j,nj->n...", self.coeffs[..., 1:], dx_t)
+        return gs.einsum("...kj,nj->...nk", self.coeffs[..., 1:], dx_t)
 
 
 class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
@@ -441,7 +441,6 @@ class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
     def _simplify_log_result(self, result, space, point, base_point):
         poly = self._update_poly_coeffs(result.x, space, point, base_point)
         log = poly.first_derivative(gs.array([1.0]))
-
         if point.ndim == 1:
             return log[0]
 
@@ -474,11 +473,11 @@ class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
 
         def path(t):
             if not gs.is_array(t):
-                t = gs.array([t])
+                t = gs.array(t)
 
             if gs.ndim(t) == 0:
                 t = gs.expand_dims(t, axis=0)
-
+                
             return poly(t)
 
         return path
