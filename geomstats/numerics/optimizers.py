@@ -94,7 +94,6 @@ class ScipyMinimize:
             constraints=self.constraints,
             callback=self.callback,
             options=self.options,
-            args=args
         )
 
         result = result_to_backend_type(result)
