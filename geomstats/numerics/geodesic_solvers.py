@@ -546,7 +546,7 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
                 Geodesic points evaluated at t.
             """
             if not gs.is_array(t):
-                t = gs.array([t])
+                t = gs.array(t)
 
             if gs.ndim(t) == 0:
                 t = gs.expand_dims(t, axis=0)
@@ -599,7 +599,7 @@ class _Polynomial:
         x_t = gs.stack(
             [gs.power(x, power) for power in range(self.degree + 1)], axis=-1
         )
-        return gs.einsum("...j,nj->n...", self.coeffs, x_t)
+        return gs.einsum("...kj,nj->...nk", self.coeffs, x_t)
 
     def first_derivative(self, x):
         """Evaluate first derivative at x.
@@ -612,7 +612,7 @@ class _Polynomial:
             [power * gs.power(x, power - 1) for power in range(1, self.degree + 1)],
             axis=-1,
         )
-        return gs.einsum("...j,nj->n...", self.coeffs[..., 1:], dx_t)
+        return gs.einsum("...kj,nj->...nk", self.coeffs[..., 1:], dx_t)
 
 
 class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
@@ -768,7 +768,7 @@ class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
                 Geodesic points evaluated at t.
             """
             if not gs.is_array(t):
-                t = gs.array([t])
+                t = gs.array(t)
 
             if gs.ndim(t) == 0:
                 t = gs.expand_dims(t, axis=0)

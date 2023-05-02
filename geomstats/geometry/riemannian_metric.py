@@ -348,7 +348,7 @@ class RiemannianMetric(Connection, ABC):
             Random unit tangent vector at base_point.
         """
         shape = base_point.shape
-        if len(shape) > len(self.shape) and n_vectors > 1:
+        if len(shape) > 1 and n_vectors > 1:
             raise ValueError(
                 "Several tangent vectors is only applicable to a single base point."
             )
