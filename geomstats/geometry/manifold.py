@@ -10,8 +10,6 @@ import abc
 
 import geomstats.backend as gs
 import geomstats.errors
-from geomstats.geometry.riemannian_metric import RiemannianMetric
-from geomstats.geometry.scalar_product_metric import ScalarProductMetric
 
 
 class Manifold(abc.ABC):
@@ -24,24 +22,27 @@ class Manifold(abc.ABC):
     shape : tuple of int
         Shape of one element of the manifold.
         Optional, default : None.
-    metric : RiemannianMetric
-        Metric object to use on the manifold.
-    default_coords_type : str, {\'intrinsic\', \'extrinsic\', etc}
+    default_coords_type : str, {'intrinsic', 'extrinsic', etc}
         Coordinate type.
         Optional, default: 'intrinsic'.
+    equip : bool
+        If True, equip space with default metric.
 
     Attributes
     ----------
     point_ndim : int
         Dimension of point array.
     default_point_type : str
-        Point type: "vector" or "matrix"
+        Point type: "vector" or "matrix".
     """
 
     def __init__(
-        self, dim, shape, metric=None, default_coords_type="intrinsic", **kwargs
+        self,
+        dim,
+        shape,
+        default_coords_type="intrinsic",
+        equip=True,
     ):
-        super().__init__(**kwargs)
         geomstats.errors.check_integer(dim, "dim")
 
         if not isinstance(shape, tuple):
@@ -50,7 +51,6 @@ class Manifold(abc.ABC):
         self.dim = dim
         self.shape = shape
         self.default_coords_type = default_coords_type
-        self._metric = metric
 
         self.point_ndim = len(self.shape)
         if self.point_ndim == 1:
@@ -59,6 +59,28 @@ class Manifold(abc.ABC):
             self.default_point_type = "matrix"
         else:
             self.default_point_type = "other"
+
+        if equip:
+            self.equip_with_metric()
+
+    def equip_with_metric(self, Metric=None, **metric_kwargs):
+        """Equip manifold with Metric.
+
+        Parameters
+        ----------
+        Metric : Connection object
+            If None, default metric will be used.
+        """
+        if Metric is None:
+            out = self.default_metric()
+            if isinstance(out, tuple):
+                Metric, kwargs = out
+                kwargs.update(metric_kwargs)
+                metric_kwargs = kwargs
+            else:
+                Metric = out
+
+        self.metric = Metric(self, **metric_kwargs)
 
     @abc.abstractmethod
     def belongs(self, point, atol=gs.atol):
@@ -150,20 +172,6 @@ class Manifold(abc.ABC):
             Regularized point.
         """
         return gs.copy(point)
-
-    @property
-    def metric(self):
-        """Riemannian Metric associated to the Manifold."""
-        return self._metric
-
-    @metric.setter
-    def metric(self, metric):
-        if metric is not None:
-            if not isinstance(metric, (RiemannianMetric, ScalarProductMetric)):
-                raise ValueError("The argument must be a RiemannianMetric object")
-            if metric.dim != self.dim:
-                metric.dim = self.dim
-        self._metric = metric
 
     def random_tangent_vec(self, base_point, n_samples=1):
         """Generate random tangent vec.

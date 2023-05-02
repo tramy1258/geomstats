@@ -27,29 +27,27 @@ class TestCorrelationMatricesBundle(TestCase, metaclass=Parametrizer):
     def test_riemannian_submersion_belongs_to_base(self, n, point):
         bundle = self.Space(n)
         base = self.Base(n)
-        result = base.belongs(bundle.riemannian_submersion(gs.array(point)))
+        result = base.belongs(bundle.riemannian_submersion(point))
         self.assertTrue(gs.all(result))
 
     def test_lift_riemannian_submersion_composition(self, n, point):
         bundle = self.Space(n)
-        result = bundle.riemannian_submersion(bundle.lift(gs.array(point)))
-        self.assertAllClose(result, gs.array(point))
+        result = bundle.riemannian_submersion(bundle.lift(point))
+        self.assertAllClose(result, point)
 
     def test_tangent_riemannian_submersion(self, n, vec, point):
         bundle = self.Space(n)
-        tangent_vec = bundle.tangent_riemannian_submersion(
-            gs.array(vec), gs.array(point)
-        )
-        result = gs.all(bundle.is_tangent(gs.array(tangent_vec), gs.array(point)))
+        tangent_vec = bundle.tangent_riemannian_submersion(vec, point)
+        result = gs.all(bundle.is_tangent(tangent_vec, point))
         self.assertTrue(result)
 
     def test_vertical_projection_tangent_submersion(self, n, vec, mat):
         bundle = self.Space(n)
         tangent_vec = bundle.to_tangent(vec, mat)
-        proj = bundle.vertical_projection(gs.array(tangent_vec), gs.array(mat))
-        result = bundle.tangent_riemannian_submersion(proj, gs.array(mat))
+        proj = bundle.vertical_projection(tangent_vec, mat)
+        result = bundle.tangent_riemannian_submersion(proj, mat)
         expected = gs.zeros_like(vec)
-        self.assertAllClose(result, gs.array(expected))
+        self.assertAllClose(result, expected)
 
     def test_horizontal_projection(self, n, vec, mat):
         bundle = self.Space(n)
@@ -65,21 +63,21 @@ class TestCorrelationMatricesBundle(TestCase, metaclass=Parametrizer):
 
     def test_horizontal_lift_is_horizontal(self, n, tangent_vec, mat):
         bundle = self.Space(n)
-        lift = bundle.horizontal_lift(gs.array(tangent_vec), gs.array(mat))
-        result = gs.all(bundle.is_horizontal(lift, gs.array(mat)))
+        lift = bundle.horizontal_lift(tangent_vec, mat)
+        result = gs.all(bundle.is_horizontal(lift, mat))
         self.assertTrue(result)
 
     def test_vertical_projection_is_vertical(self, n, tangent_vec, mat):
         bundle = self.Space(n)
-        proj = bundle.vertical_projection(gs.array(tangent_vec), gs.array(mat))
-        result = gs.all(bundle.is_vertical(proj, gs.array(mat)))
+        proj = bundle.vertical_projection(tangent_vec, mat)
+        result = gs.all(bundle.is_vertical(proj, mat))
         self.assertTrue(result)
 
     @autograd_and_torch_only
     def test_log_after_align_is_horizontal(self, n, point_a, point_b):
         bundle = self.Space(n)
         aligned = bundle.align(point_a, point_b, tol=1e-10)
-        log = bundle.total_space_metric.log(aligned, point_b)
+        log = bundle.metric.log(aligned, point_b)
         result = bundle.is_horizontal(log, point_b, atol=1e-2)
         self.assertTrue(result)
 
@@ -87,24 +85,32 @@ class TestCorrelationMatricesBundle(TestCase, metaclass=Parametrizer):
         self, n, tangent_vec, mat
     ):
         bundle = self.Space(n)
-        horizontal = bundle.horizontal_lift(gs.array(tangent_vec), gs.array(mat))
-        result = bundle.tangent_riemannian_submersion(horizontal, gs.array(mat))
+        horizontal = bundle.horizontal_lift(tangent_vec, mat)
+        result = bundle.tangent_riemannian_submersion(horizontal, mat)
         self.assertAllClose(result, tangent_vec, atol=gs.atol * 100)
 
 
 class TestFullRankCorrelationAffineQuotientMetric(TestCase, metaclass=Parametrizer):
     testing_data = FullRankcorrelationAffineQuotientMetricTestData()
-    Space = testing_data.Space
     Metric = testing_data.Metric
 
     @autograd_and_torch_only
-    def test_exp_log_composition(self, dim, point):
-        metric = self.Metric(dim)
-        log = metric.log(point[1], point[0])
-        result = metric.exp(log, point[0])
-        self.assertAllClose(result, point[1], atol=gs.atol * 10000)
+    def test_exp_log_composition(self, space, n_points):
+        space.equip_with_metric(self.Metric)
 
-    def test_exp_belongs(self, dim, tangent_vec, base_point):
-        metric = self.Metric(dim)
-        exp = metric.exp(tangent_vec, base_point)
-        self.assertAllClose(self.Space(dim).belongs(exp), True)
+        point = space.random_point(n_points)
+        base_point = space.random_point(n_points)
+
+        log = space.metric.log(point, base_point)
+        result = space.metric.exp(log, base_point)
+        self.assertAllClose(result, point, atol=gs.atol * 10000)
+
+    def test_exp_belongs(self, space, n_points):
+        space.equip_with_metric(self.Metric)
+        bundle = space.metric.fiber_bundle
+
+        base_point = space.random_point(n_points)
+        tangent_vec = space.to_tangent(bundle.random_point(), base_point)
+
+        exp = space.metric.exp(tangent_vec, base_point)
+        self.assertAllClose(space.belongs(exp), True)
