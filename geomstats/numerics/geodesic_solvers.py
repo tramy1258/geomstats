@@ -123,15 +123,15 @@ class ExpIVPSolver(ExpSolver):
 
             Parameters
             ----------
-            t : float or array-like, shape=[..., dim]
+            t : float or array-like, shape=[n_times,]
 
             Returns
             -------
-            geodesic_points : array-like, shape=[..., n_t, dim]
+            geodesic_points : array-like, shape=[..., n_times, dim]
                 Geodesic points evaluated at t.
             """
             if not gs.is_array(t):
-                t = gs.array([t])
+                t = gs.array(t)
 
             if gs.ndim(t) == 0:
                 t = gs.expand_dims(t, axis=0)
@@ -153,13 +153,8 @@ class ExpIVPSolver(ExpSolver):
         return force_
 
     def _force_raveled_state(self, raveled_initial_state, _, space):
-        # input: (n,)
-
-        # assumes unvectorize
         state = gs.reshape(raveled_initial_state, (2, space.dim))
-
         eq = space.metric.geodesic_equation(state, _)
-
         return gs.flatten(eq)
 
     def _force_unraveled_state(self, initial_state, _, space):
@@ -174,7 +169,6 @@ class ExpIVPSolver(ExpSolver):
         return y[0]
 
     def _simplify_result_t(self, result, space):
-        # assumes several t
         y = result.y
 
         if self.integrator.state_is_raveled:
@@ -264,11 +258,11 @@ class _GeodesicBVPFromExpMixins:
 
             Parameters
             ----------
-            t : float or array-like, shape=[..., dim]
+            t : float or array-like, shape=[n_times,]
 
             Returns
             -------
-            geodesic_points : array-like, shape=[..., n_t, dim]
+            geodesic_points : array-like, shape=[..., n_times, dim]
                 Geodesic points evaluated at t.
             """
             if not gs.is_array(t):
@@ -459,7 +453,6 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
         self.n_nodes = n_nodes
         self.integrator = integrator
         self.initialization = initialization
-
         self.grid = self._create_grid()
 
     def _create_grid(self):
@@ -467,12 +460,9 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
 
     def _default_initialization(self, space, point, base_point):
         point_0, point_1 = base_point, point
-
         pos_init = gs.transpose(gs.linspace(point_0, point_1, self.n_nodes))
-
         vel_init = self.n_nodes * (pos_init[:, 1:] - pos_init[:, :-1])
         vel_init = gs.hstack([vel_init, vel_init[:, [-2]]])
-
         return gs.vstack([pos_init, vel_init])
 
     def _boundary_condition(self, state_0, state_1, space, point_0, point_1):
@@ -481,13 +471,8 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
         return gs.hstack((pos_0 - point_0, pos_1 - point_1))
 
     def _bvp(self, _, raveled_state, space):
-        # inputs: n (2*dim) , n_nodes
-        # assumes unvectorized
-
         state = gs.moveaxis(gs.reshape(raveled_state, (2, space.dim, -1)), -2, -1)
-
         eq = space.metric.geodesic_equation(state, _)
-
         return gs.reshape(gs.moveaxis(eq, -2, -1), (2 * space.dim, -1))
 
     def _solve(self, space, point, base_point):
@@ -538,11 +523,11 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
 
             Parameters
             ----------
-            t : float or array-like, shape=[..., dim]
+            t : float or array-like, shape=[n_times]
 
             Returns
             -------
-            geodesic_points : array-like, shape=[..., n_t, dim]
+            geodesic_points : array-like, shape=[..., n_times, dim]
                 Geodesic points evaluated at t.
             """
             if not gs.is_array(t):
@@ -563,17 +548,16 @@ class LogBVPSolver(_LogBatchMixins, LogSolver):
     def _simplify_log_result(self, result, space):
         _, tangent_vec = gs.reshape(gs.transpose(result.y)[0], (2, space.dim))
         return tangent_vec
-
+    
     def _simplify_result_t(self, result, space):
         return gs.transpose(result[: space.dim, :])
-
-
+ 
 class _Polynomial:
     """Power series.
 
     Parameters
     ----------
-    coeffs : array-like, [..., degree + 1]
+    coeffs : array-like, shape=[..., degree + 1]
         Series coefficients.
     """
 
@@ -585,31 +569,35 @@ class _Polynomial:
         """Polynomial degree."""
         return self.coeffs.shape[-1] - 1
 
-    def __call__(self, x):
-        """Evaluate series at x.
+    def __call__(self, t):
+        """Evaluate series at t.
 
         Parameters
         ----------
-        x : array-like, [dim,]
+        t : array-like, shape=[n_times,]
 
         Returns
         -------
-        poly_eval : array-like, shape=[dim, ...]
+        poly_eval : array-like, shape=[..., n_times, dim]
         """
         x_t = gs.stack(
-            [gs.power(x, power) for power in range(self.degree + 1)], axis=-1
+            [gs.power(t, power) for power in range(self.degree + 1)], axis=-1
         )
         return gs.einsum("...kj,nj->...nk", self.coeffs, x_t)
 
-    def first_derivative(self, x):
-        """Evaluate first derivative at x.
+    def first_derivative(self, t):
+        """Evaluate first derivative at t.
 
         Parameters
         ----------
-        x : array-like, shape=[dim,]
+        t : array-like, shape=[n_times,]
+
+        Returns
+        -------
+        poly_eval : array-like, shape=[..., n_times, dim]
         """
         dx_t = gs.stack(
-            [power * gs.power(x, power - 1) for power in range(1, self.degree + 1)],
+            [power * gs.power(t, power - 1) for power in range(1, self.degree + 1)],
             axis=-1,
         )
         return gs.einsum("...kj,nj->...nk", self.coeffs[..., 1:], dx_t)
@@ -671,7 +659,8 @@ class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
         poly : _Polynomial
             Polynomial object with coefficients.
         t : array-like
-
+        space : Manifold
+            Equipped manifold.
         Returns
         -------
         energy : float
@@ -706,7 +695,6 @@ class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
     def _simplify_log_result(self, result, space, point, base_point):
         poly = self._update_poly_coeffs(result.x, space, point, base_point)
         log = poly.first_derivative(gs.array([1.0]))
-
         if point.ndim == 1:
             return log[0]
 
@@ -760,11 +748,11 @@ class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
 
             Parameters
             ----------
-            t : float or array-like, shape=[..., dim]
+            t : float or array-like, shape=[n_times,]
 
             Returns
             -------
-            geodesic_points : array-like, shape=[..., n_t, dim]
+            geodesic_points : array-like, shape=[..., n_times, dim]
                 Geodesic points evaluated at t.
             """
             if not gs.is_array(t):
@@ -772,7 +760,7 @@ class LogPolynomialApproxSolver(_LogBatchMixins, LogSolver):
 
             if gs.ndim(t) == 0:
                 t = gs.expand_dims(t, axis=0)
-
+                
             return poly(t)
 
         return path
