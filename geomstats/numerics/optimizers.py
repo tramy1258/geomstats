@@ -43,28 +43,24 @@ class ScipyMinimize:
         if fun_jac is not None:
             return fun, fun_jac
 
-        jac = self.jac if fun_jac is None else fun_jac
-        if jac == "autodiff":
-            jac = True
+        if self.jac == "autodiff":
 
             def fun_(x):
                 value, grad = gs.autodiff.value_and_grad(fun, to_numpy=True)(
                     gs.from_numpy(x)
                 )
                 return value, grad
-
+            
+            return fun_, True
         else:
 
             def fun_(x):
                 return fun(gs.from_numpy(x))
 
-        return fun_, jac
+            return fun_, self.jac
 
     def _handle_hess(self, fun_hess):
-        if fun_hess is not None:
-            return fun_hess
-
-        return self.hess
+        return fun_hess if fun_hess is not None else self.hess
 
     def minimize(self, fun, x0, fun_jac=None, fun_hess=None, hessp=None):
         """Minimize objective function.
