@@ -22,6 +22,7 @@ from geomstats.geometry.riemannian_metric import RiemannianMetric
 from geomstats.geometry.scalar_product_metric import ScalarProductMetric
 from geomstats.geometry.spd_matrices import SPDAffineMetric, SPDMatrices
 from geomstats.information_geometry.base import InformationManifoldMixin
+from geomstats.information_geometry.fisher_rao_metric import FisherRaoMetric
 
 
 class NormalDistributions:
@@ -533,6 +534,8 @@ class GeneralNormalDistributions(InformationManifoldMixin, ProductManifold):
             pdf_at_x: array-like, shape=[..., n_samples]
                 Probability density function at x.
             """
+            print('x',x)
+            print('mean', mean, 'inv_cov', inv_cov)
             pdf = gs.stack([gs.exp(-0.5 * gs.einsum('...i,...ii,...i->...', x_-mean, inv_cov, x_-mean)) for x_ in x], axis=0)
             return gs.transpose(pdf_normalization * pdf)
 
@@ -645,8 +648,7 @@ class UnivariateNormalMetric(PullbackDiffeoMetric):
         """
         return self.inverse_diffeomorphism(image_tangent_vec)
 
-    @staticmethod
-    def metric_matrix(base_point):
+    def metric_matrix(self, base_point):
         """Compute the metric matrix at the tangent space at base_point.
 
         Parameters
@@ -745,9 +747,7 @@ class DiagonalNormalMetric(RiemannianMetric):
         pairs : array-like, shape=[..., sample_dim, 2]
             Pairs of parameters (e.g. means and variances).
         """
-        mean, diagonal = self._space._unstack_mean_diagonal(
-            self._space.sample_dim, point
-        )
+        mean, diagonal = self._space._unstack_mean_diagonal(point)
         if apply_sqrt:
             diagonal = gs.sqrt(diagonal)
         return gs.stack([mean, diagonal], axis=-1)
@@ -866,9 +866,9 @@ class DiagonalNormalMetric(RiemannianMetric):
         """
         return math.inf
     
-class GeneralNormalMetric(RiemannianMetric):
-    def inner_product(self, base_point):
-        pass
+class GeneralNormalMetric(FisherRaoMetric):
+    # def inner_product(self, base_point):
+    #     pass
 
     def exp(self, tangent_vec, base_point):
         pass
